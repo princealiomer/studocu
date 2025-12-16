@@ -28,21 +28,12 @@ export async function POST(req) {
             }
             // Vercel / Production (Linux Serverless)
             else {
-                console.log('Launching serverless chromium...');
-                // Aggressive cleanup for Vercel stability
+                console.log('Launching serverless chromium v112...');
+                // Trust the package arguments for stability
                 chromium.setGraphicsMode = false;
 
                 browser = await puppeteerCore.launch({
-                    args: [
-                        ...chromium.args,
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-gpu',
-                        '--no-first-run',
-                        '--no-zygote',
-                        '--single-process'
-                    ],
+                    args: chromium.args,
                     defaultViewport: chromium.defaultViewport,
                     executablePath: await chromium.executablePath(),
                     headless: chromium.headless,
