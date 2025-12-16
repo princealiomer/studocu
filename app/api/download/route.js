@@ -1,24 +1,66 @@
-import { chromium } from 'playwright-core';
-import chromiumLambda from 'playwright-aws-lambda';
+import { chromium as playwrightBrowser } from 'playwright-core';
+import chromium from '@sparticuz/chromium';
 import { jsPDF } from 'jspdf';
 import { NextResponse } from 'next/server';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
+
+// Configuration constants
+const MAX_SCROLL_HEIGHT = 100000;
+const SCROLL_DISTANCE = 100;
+const SCROLL_INTERVAL_MS = 50;
+const MAX_SCROLL_TIME_MS = 240000; // 4 minutes
 
 export async function POST(req) {
     let browser = null;
     try {
         const { url } = await req.json();
-        if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 });
 
-        console.log('Launching Playwright...');
+        // Validate URL is provided
+        if (!url) {
+            return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+        }
 
-        if (process.env.NODE_ENV === 'development') {
-            browser = await chromium.launch({ headless: true });
+        // SSRF Protection: Validate it's a studocu.com URL
+        const urlPattern = /^https:\/\/(www\.)?studocu\.com\//i;
+        if (!urlPattern.test(url)) {
+            return NextResponse.json({
+                error: 'Invalid URL. Please provide a valid StudoCu document URL (e.g., https://www.studocu.com/...)'
+            }, { status: 400 });
+        }
+
+        console.log('Launching Hybrid Playwright...');
+
+        // Use environment variable to control browser mode
+        // Set USE_LOCAL_BROWSER=true for local development or Windows production
+        const useLocalBrowser = process.env.USE_LOCAL_BROWSER === 'true' ||
+            process.env.NODE_ENV === 'development';
+
+        if (useLocalBrowser) {
+            console.log('Using Local Playwright Launch...');
+            try {
+                browser = await playwrightBrowser.launch({
+                    headless: true,
+                    channel: 'chrome', // Try system Chrome first
+                    args: ['--no-sandbox', '--disable-setuid-sandbox']
+                });
+            } catch (chromeError) {
+                console.warn('Chrome channel failed, trying default launch:', chromeError.message);
+                browser = await playwrightBrowser.launch({
+                    headless: true,
+                    args: ['--no-sandbox', '--disable-setuid-sandbox']
+                });
+            }
         } else {
-            browser = await chromiumLambda.launchChromium({
-                headless: true
+            console.log('Resolving Sparticuz Config (Serverless/Lambda)...');
+            chromium.setGraphicsMode = false;
+            const executablePath = await chromium.executablePath();
+
+            browser = await playwrightBrowser.launch({
+                args: chromium.args,
+                executablePath: executablePath,
+                headless: chromium.headless,
             });
         }
 
@@ -28,23 +70,34 @@ export async function POST(req) {
         const page = await context.newPage();
 
         console.log(`Navigating to ${url}...`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        // Auto-scroll function adapted for Playwright
-        await page.evaluate(async () => {
+        // Auto-scroll function with timeout protection
+        await page.evaluate(async (config) => {
             await new Promise((resolve) => {
                 let totalHeight = 0;
-                const distance = 100;
+                const startTime = Date.now();
+
                 const timer = setInterval(() => {
                     const scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-                    if (totalHeight >= scrollHeight || totalHeight > 50000) {
+                    window.scrollBy(0, config.distance);
+                    totalHeight += config.distance;
+                    const elapsedTime = Date.now() - startTime;
+
+                    // Stop if: reached bottom, scrolled too far, or timeout
+                    if (totalHeight >= scrollHeight ||
+                        totalHeight > config.maxHeight ||
+                        elapsedTime > config.maxTime) {
                         clearInterval(timer);
                         resolve();
                     }
-                }, 100);
+                }, config.interval);
             });
+        }, {
+            distance: SCROLL_DISTANCE,
+            maxHeight: MAX_SCROLL_HEIGHT,
+            maxTime: MAX_SCROLL_TIME_MS,
+            interval: SCROLL_INTERVAL_MS
         });
 
         console.log('Extracting images...');
