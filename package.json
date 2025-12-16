@@ -11,12 +11,12 @@
     "node": "20.x"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^126.0.0",
+    "@sparticuz/chromium": "^143.0.0",
     "jspdf": "^3.0.4",
     "lucide-react": "^0.561.0",
     "next": "^15.1.0",
     "playwright-core": "^1.57.0",
-    "puppeteer-core": "^22.6.0",
+    "puppeteer-core": "^23.10.4",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },
