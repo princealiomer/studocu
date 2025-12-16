@@ -62,11 +62,14 @@ export async function POST(req) {
         } else {
             // Serverless: Use Puppeteer with @sparticuz/chromium (they're compatible)
             console.log('Using Puppeteer with Sparticuz Chromium (Serverless)...');
+
+            const executablePath = await chromium.executablePath();
+            console.log('Chromium executable path:', executablePath);
+
             browser = await puppeteer.launch({
-                args: chromium.args,
-                defaultViewport: chromium.defaultViewport,
-                executablePath: await chromium.executablePath(),
-                headless: chromium.headless,
+                args: [...chromium.args, '--disable-dev-shm-usage'],
+                executablePath: executablePath,
+                headless: 'shell', // Use 'shell' mode for v143+
             });
             page = await browser.newPage();
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36');
