@@ -8,11 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
-    "@sparticuz/chromium": "^119.0.2",
+    "@sparticuz/chromium": "^126.0.0",
     "jspdf": "^3.0.4",
     "lucide-react": "^0.561.0",
     "next": "16.0.10",
-    "puppeteer-core": "^21.5.2",
+    "puppeteer-core": "^22.15.0",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },
