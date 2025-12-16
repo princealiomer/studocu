@@ -60,7 +60,7 @@ export async function POST(req) {
             browser = await playwrightBrowser.launch({
                 args: chromium.args,
                 executablePath: executablePath,
-                headless: chromium.headless,
+                headless: true, // Force boolean true instead of chromium.headless which may return string
             });
         }
 
