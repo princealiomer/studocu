@@ -28,7 +28,7 @@ export async function POST(req) {
             }
             // Vercel / Production (Linux Serverless)
             else {
-                console.log('Launching serverless chromium v112...');
+                console.log('Launching serverless chromium v123...');
                 // Trust the package arguments for stability
                 chromium.setGraphicsMode = false;
 
