@@ -8,7 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^143.0.0",
+    "jspdf": "^3.0.4",
+    "lucide-react": "^0.561.0",
     "next": "16.0.10",
+    "puppeteer-core": "^24.33.0",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },
@@ -17,6 +21,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "puppeteer": "^24.33.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
