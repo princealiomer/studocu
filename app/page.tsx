@@ -31,7 +31,21 @@ export default function Home() {
 
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
-      const outputName = 'studocu-document.pdf';
+
+      // Extract filename from Content-Disposition header or custom header
+      let outputName = 'studocu-document.pdf';
+      const contentDisposition = response.headers.get('Content-Disposition');
+      if (contentDisposition) {
+        const matches = contentDisposition.match(/filename="([^"]+)"/);
+        if (matches?.[1]) {
+          outputName = matches[1];
+        }
+      } else {
+        const titleHeader = response.headers.get('X-Document-Title');
+        if (titleHeader) {
+          outputName = `${titleHeader}.pdf`;
+        }
+      }
 
       const link = document.createElement('a');
       link.href = downloadUrl;

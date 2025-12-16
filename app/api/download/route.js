@@ -78,6 +78,32 @@ export async function POST(req) {
         console.log(`Navigating to ${url}...`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
+        // Extract page title for filename
+        console.log('Extracting page title...');
+        const pageTitle = await page.evaluate(() => {
+            // Try multiple selectors for title
+            const titleElement = document.querySelector('h1[data-testid="document-title"]') ||
+                document.querySelector('h1.title') ||
+                document.querySelector('h1') ||
+                document.querySelector('meta[property="og:title"]');
+
+            let title;
+            if (titleElement?.tagName === 'META') {
+                title = titleElement.getAttribute('content');
+            } else {
+                title = titleElement?.textContent?.trim();
+            }
+
+            if (!title) {
+                title = document.title;
+            }
+
+            // Sanitize filename: remove invalid characters and limit length
+            title = title.replace(/[<>:"/\\|?*]/g, '-').substring(0, 100).trim();
+            return title || 'studocu-document';
+        });
+        console.log('Page title:', pageTitle);
+
         // Auto-scroll function with timeout protection
         await page.evaluate(async (config) => {
             await new Promise((resolve) => {
@@ -106,48 +132,91 @@ export async function POST(req) {
             interval: SCROLL_INTERVAL_MS
         });
 
-        console.log('Extracting images...');
-        const imageUrls = await page.evaluate(async () => {
-            const results = [];
+        console.log('Extracting content...');
+        let imageUrls = [];
 
-            const toBase64 = async (url) => {
-                try {
-                    const response = await fetch(url);
-                    const blob = await response.blob();
-                    const bitmap = await createImageBitmap(blob);
-                    const canvas = document.createElement('canvas');
-                    canvas.width = bitmap.width;
-                    canvas.height = bitmap.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(bitmap, 0, 0);
-                    return canvas.toDataURL('image/jpeg', 0.5);
-                } catch (e) { return null; }
-            };
+        // Try to capture using element screenshots (preserves text overlays)
+        if (useLocalBrowser) {
+            // Playwright approach
+            console.log('Using Playwright screenshot method...');
+            try {
+                const pageContainers = await page.$$('.pc, .page-container, [class*="page"]');
+                console.log(`Found ${pageContainers.length} page containers`);
 
-            const pcs = Array.from(document.querySelectorAll('.pc'));
-            for (const pc of pcs) {
-                const img = pc.querySelector('img');
-                if (img && img.src) {
-                    const b64 = await toBase64(img.src);
-                    if (b64) results.push(b64);
-                    continue;
+                for (const container of pageContainers) {
+                    await container.scrollIntoViewIfNeeded();
+                    await page.waitForTimeout(100);
+                    const screenshot = await container.screenshot({ type: 'jpeg', quality: 90 });
+                    const base64 = `data:image/jpeg;base64,${screenshot.toString('base64')}`;
+                    imageUrls.push(base64);
                 }
-                const style = window.getComputedStyle(pc);
-                const bg = style.backgroundImage;
-                const match = bg && bg.match(/url\(['"]?(.*?)['"]?\)/);
-                if (match && match[1]) {
-                    const b64 = await toBase64(match[1]);
-                    if (b64) results.push(b64);
-                }
+            } catch (screenshotError) {
+                console.warn('Screenshot method failed, falling back to evaluate:', screenshotError.message);
             }
-            if (results.length === 0) {
-                const canvases = Array.from(document.querySelectorAll('canvas'));
-                for (const c of canvases) {
-                    results.push(c.toDataURL('image/jpeg', 0.5));
+        } else {
+            // Puppeteer approach
+            console.log('Using Puppeteer screenshot method...');
+            try {
+                const pageContainers = await page.$$('.pc, .page-container, [class*="page"]');
+                console.log(`Found ${pageContainers.length} page containers`);
+
+                for (const container of pageContainers) {
+                    await container.evaluate(el => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+                    await page.waitForTimeout(100);
+                    const screenshot = await container.screenshot({ type: 'jpeg', quality: 90 });
+                    const base64 = `data:image/jpeg;base64,${screenshot.toString('base64')}`;
+                    imageUrls.push(base64);
                 }
+            } catch (screenshotError) {
+                console.warn('Screenshot method failed, falling back to evaluate:', screenshotError.message);
             }
-            return results;
-        });
+        }
+
+        // Fallback: Use original image extraction method
+        if (imageUrls.length === 0) {
+            console.log('Using fallback image extraction method...');
+            imageUrls = await page.evaluate(async () => {
+                const results = [];
+
+                const toBase64 = async (url) => {
+                    try {
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        const bitmap = await createImageBitmap(blob);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = bitmap.width;
+                        canvas.height = bitmap.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(bitmap, 0, 0);
+                        return canvas.toDataURL('image/jpeg', 0.9);
+                    } catch (e) { return null; }
+                };
+
+                const pcs = Array.from(document.querySelectorAll('.pc'));
+                for (const pc of pcs) {
+                    const img = pc.querySelector('img');
+                    if (img && img.src) {
+                        const b64 = await toBase64(img.src);
+                        if (b64) results.push(b64);
+                        continue;
+                    }
+                    const style = window.getComputedStyle(pc);
+                    const bg = style.backgroundImage;
+                    const match = bg && bg.match(/url\(['"]?(.*?)['"]?\)/);
+                    if (match && match[1]) {
+                        const b64 = await toBase64(match[1]);
+                        if (b64) results.push(b64);
+                    }
+                }
+                if (results.length === 0) {
+                    const canvases = Array.from(document.querySelectorAll('canvas'));
+                    for (const c of canvases) {
+                        results.push(c.toDataURL('image/jpeg', 0.9));
+                    }
+                }
+                return results;
+            });
+        }
 
         await browser.close();
 
@@ -166,11 +235,14 @@ export async function POST(req) {
         }
 
         const pdfBuffer = doc.output('arraybuffer');
+        const sanitizedTitle = pageTitle || 'studocu-document';
+
         return new NextResponse(pdfBuffer, {
             status: 200,
             headers: {
                 'Content-Type': 'application/pdf',
-                'Content-Disposition': 'attachment; filename="document.pdf"',
+                'Content-Disposition': `attachment; filename="${sanitizedTitle}.pdf"`,
+                'X-Document-Title': sanitizedTitle,
             },
         });
 
