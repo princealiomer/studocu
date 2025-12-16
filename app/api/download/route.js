@@ -1,4 +1,5 @@
 import { chromium as playwrightBrowser } from 'playwright-core';
+import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { jsPDF } from 'jspdf';
 import { NextResponse } from 'next/server';
@@ -30,19 +31,21 @@ export async function POST(req) {
             }, { status: 400 });
         }
 
-        console.log('Launching Hybrid Playwright...');
+        console.log('Launching Browser...');
 
         // Use environment variable to control browser mode
         // Set USE_LOCAL_BROWSER=true for local development or Windows production
         const useLocalBrowser = process.env.USE_LOCAL_BROWSER === 'true' ||
             process.env.NODE_ENV === 'development';
 
+        let page;
+
         if (useLocalBrowser) {
             console.log('Using Local Playwright Launch...');
             try {
                 browser = await playwrightBrowser.launch({
                     headless: true,
-                    channel: 'chrome', // Try system Chrome first
+                    channel: 'chrome',
                     args: ['--no-sandbox', '--disable-setuid-sandbox']
                 });
             } catch (chromeError) {
@@ -52,22 +55,22 @@ export async function POST(req) {
                     args: ['--no-sandbox', '--disable-setuid-sandbox']
                 });
             }
-        } else {
-            console.log('Resolving Sparticuz Config (Serverless/Lambda)...');
-            chromium.setGraphicsMode = false;
-            const executablePath = await chromium.executablePath();
-
-            browser = await playwrightBrowser.launch({
-                args: chromium.args,
-                executablePath: executablePath,
-                headless: true, // Force boolean true instead of chromium.headless which may return string
+            const context = await browser.newContext({
+                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
             });
+            page = await context.newPage();
+        } else {
+            // Serverless: Use Puppeteer with @sparticuz/chromium (they're compatible)
+            console.log('Using Puppeteer with Sparticuz Chromium (Serverless)...');
+            browser = await puppeteer.launch({
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: chromium.headless,
+            });
+            page = await browser.newPage();
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36');
         }
-
-        const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
-        });
-        const page = await context.newPage();
 
         console.log(`Navigating to ${url}...`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
