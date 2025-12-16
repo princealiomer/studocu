@@ -1,6 +1,6 @@
 {
     "functions": {
-        "api/download/route.js": {
+        "app/api/download/route.js": {
             "memory": 1024,
             "maxDuration": 300
         }
